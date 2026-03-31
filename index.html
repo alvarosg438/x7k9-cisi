@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI&SI — Generador de Mapas de Proceso</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --navy: #0f1f3d;
+  --gold: #c8972a;
+  --gold-light: #e8d5a0;
+  --cream: #f5f0e8;
+  --white: #ffffff;
+  --border: #d8cfc0;
+  --text: #1a1a2e;
+  --muted: #5a6070;
+  --teal: #1a7a6e;
+  --red: #c0392b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--cream); color: var(--text); min-height: 100vh; }
+
+/* ===== APP SHELL ===== */
+.app { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
+
+/* ===== LEFT PANEL ===== */
+.panel {
+  background: var(--navy);
+  padding: 28px 24px;
+  display: flex; flex-direction: column; gap: 20px;
+  overflow-y: auto;
+}
+.panel-logo {
+  font-family: 'DM Serif Display', serif;
+  color: var(--white); font-size: 20px; margin-bottom: 4px;
+}
+.panel-sub { color: rgba(255,255,255,0.45); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+
+.upload-zone {
+  border: 2px dashed rgba(200,151,42,0.5);
+  border-radius: 12px;
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(200,151,42,0.05);
+}
+.upload-zone:hover { border-color: var(--gold); background: rgba(200,151,42,0.1); }
+.upload-zone.dragging { border-color: var(--gold); background: rgba(200,151,42,0.15); }
+.upload-icon { font-size: 32px; margin-bottom: 10px; }
+.upload-title { color: var(--white); font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.upload-hint { color: rgba(255,255,255,0.45); font-size: 12px; line-height: 1.5; }
+
+.section-title {
+  font-size: 10px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; color: rgba(255,255,255,0.4);
+  margin-bottom: 8px;
+}
+
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 500; }
+.field input, .field select, .field textarea {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; padding: 9px 12px;
+  color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 13px;
+  outline: none; transition: border-color 0.2s;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: rgba(200,151,42,0.6);
+}
+.field input::placeholder, .field textarea::placeholder { color: rgba(255,255,255,0.25); }
+.field select option { background: #1a3160; color: white; }
+
+.detected-badge {
+  background: rgba(26,122,110,0.2);
+  border: 1px solid rgba(26,122,110,0.4);
+  border-radius: 6px; padding: 8px 12px;
+  font-size: 12px; color: #5DCAA5;
+  display: none;
+}
+.detected-badge.visible { display: block; }
+
+.btn-generate {
+  background: var(--gold);
+  color: var(--navy);
+  border: none; border-radius: 10px;
+  padding: 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer; width: 100%;
+  transition: all 0.2s;
+  margin-top: 4px;
+}
+.btn-generate:hover { background: #e6b84a; transform: translateY(-1px); }
+.btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ===== RIGHT PANEL — PREVIEW ===== */
+.preview {
+  background: #e8e4dc;
+  padding: 32px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 20px;
+  align-items: center;
+}
+.preview-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+}
+.preview-empty-icon { font-size: 56px; opacity: 0.3; margin-bottom: 16px; }
+.preview-empty-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--navy); opacity: 0.5; margin-bottom: 8px; }
+
+.preview-actions {
+  display: flex; gap: 10px; width: 100%; max-width: 960px;
+  justify-content: flex-end;
+}
+.btn-action {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 18px;
+  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+  cursor: pointer; color: var(--text);
+  transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.btn-action:hover { border-color: var(--navy); color: var(--navy); }
+.btn-action.primary { background: var(--navy); color: white; border-color: var(--navy); }
+.btn-action.primary:hover { background: #1a3160; }
+
+/* ===== DOCUMENTO CI&SI ===== */
+.doc-page {
+  background: var(--white);
+  width: 960px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  page-break-after: always;
+}
+
+/* Header institucional */
+.doc-header {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  border: 1.5px solid #333;
+  margin: 20px 24px 0;
+}
+.doc-header-logo {
+  border-right: 1.5px solid #333;
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px;
+  min-height: 80px;
+}
+.doc-header-logo .logo-text {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px; color: var(--navy);
+  text-align: center; line-height: 1.2;
+}
+.doc-header-logo .logo-sub {
+  font-size: 9px; color: var(--muted); text-align: center;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.doc-header-info { display: grid; grid-template-rows: 1fr 1fr 1fr; }
+.doc-header-row {
+  display: grid; grid-template-columns: 1fr 180px;
+  border-bottom: 1px solid #aaa;
+}
+.doc-header-row:last-child { border-bottom: none; }
+.doc-header-cell {
+  padding: 5px 10px; font-size: 11px;
+  border-right: 1px solid #aaa;
+  display: flex; align-items: center;
+}
+.doc-header-cell:last-child { border-right: none; }
+.doc-header-cell strong { font-weight: 600; margin-right: 6px; }
+
+/* Portada */
+.page-cover {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 500px; padding: 60px 40px;
+  position: relative;
+}
+.cover-deco {
+  position: absolute; bottom: 0; left: 0;
+  display: flex; gap: 6px; padding: 20px; flex-wrap: wrap; width: 200px;
+}
+.hex {
+  width: 36px; height: 36px;
+  background: var(--gold-light);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  opacity: 0.6;
+}
+.hex.dark { background: var(--gold); opacity: 0.4; }
+.hex.sm { width: 20px; height: 20px; }
+.cover-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 36px; text-align: center; color: var(--navy);
+  margin-bottom: 16px; line-height: 1.3;
+}
+.cover-proceso { font-size: 14px; color: var(--muted); }
+
+/* Simbología */
+.symbology-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0; margin: 20px 24px;
+  border: 1px solid #ccc;
+}
+.sym-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; border-bottom: 1px solid #eee;
+  font-size: 12px;
+}
+.sym-row:last-child { border-bottom: none; }
+.sym-shape { flex-shrink: 0; width: 80px; display: flex; justify-content: center; }
+.sym-eq { color: var(--gold); font-weight: 700; font-size: 16px; margin: 0 4px; flex-shrink: 0; }
+.sym-label { color: var(--text); }
+
+/* Shapes SVG */
+.sym-shape svg { overflow: visible; }
+
+/* Ficha técnica */
+.ficha-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  margin: 16px 24px;
+  border: 1px solid #ccc;
+  min-height: 320px;
+}
+.ficha-col { padding: 0; }
+.ficha-col-right { border-left: 1px solid #ccc; }
+.ficha-header {
+  background: #f0ebe0;
+  padding: 8px 14px;
+  font-size: 11px; font-weight: 700;
+  text-align: center; letter-spacing: 0.5px;
+  border-bottom: 1px solid #ccc;
+}
+.ficha-content {
+  padding: 14px;
+  font-size: 11.5px; font-style: italic;
+  line-height: 1.7; color: #333;
+}
+.ficha-content p { margin-bottom: 6px; }
+.ficha-sub-header {
+  background: #f0ebe0;
+  padding: 6px 14px;
+  font-size: 11px; font-weight: 700;
+  text-align: center; letter-spacing: 0.5px;
+  border-top: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+}
+
+/* Diagrama */
+.diagram-container {
+  margin: 16px 24px 20px;
+  border: 1px solid #ccc;
+  padding: 20px 16px;
+  overflow-x: auto;
+}
+.diagram-title {
+  font-size: 10px; color: var(--muted); margin-bottom: 12px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+/* Nodos del diagrama */
+.flow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  position: relative;
+}
+.flow-cell {
+  display: flex; flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  position: relative;
+  min-height: 120px;
+  justify-content: flex-start;
+}
+.flow-cell::after {
+  content: '→';
+  position: absolute; right: -8px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px; color: #aaa;
+  z-index: 2;
+}
+.flow-cell:nth-child(3n)::after { display: none; }
+.flow-cell.no-arrow::after { display: none; }
+.flow-cell.down-arrow::after {
+  content: '↓';
+  right: auto; left: 50%;
+  top: auto; bottom: -16px;
+  transform: translateX(-50%);
+}
+
+/* Shapes de nodos */
+.node-activity {
+  border: 1.5px solid #333;
+  width: 100%; min-height: 56px;
+  display: flex; flex-direction: column;
+  position: relative;
+}
+.node-act-text {
+  padding: 6px 8px;
+  font-size: 10.5px; font-style: italic;
+  color: #222; line-height: 1.4;
+  flex: 1;
+}
+.node-act-role {
+  border-top: 1.5px solid #333;
+  padding: 3px 8px;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; color: #444;
+  letter-spacing: 0.3px;
+}
+
+.node-decision {
+  width: 90px; height: 52px;
+  background: white;
+  border: 1.5px solid #333;
+  transform: rotate(45deg);
+  display: flex; align-items: center; justify-content: center;
+  margin: 12px auto;
+  flex-shrink: 0;
+}
+.node-decision-text {
+  transform: rotate(-45deg);
+  font-size: 9px; font-style: italic;
+  text-align: center; line-height: 1.2;
+  color: #333; padding: 4px;
+  width: 90px;
+}
+
+.node-oval {
+  border: 1.5px solid #333;
+  border-radius: 50px;
+  padding: 8px 20px;
+  font-size: 11px; font-weight: 600;
+  color: #222; white-space: nowrap;
+  background: white;
+  display: inline-block;
+}
+
+.node-doc {
+  border: 1.5px solid #333;
+  width: 100%; padding: 4px 6px;
+  font-size: 9px; font-weight: 600;
+  text-transform: uppercase; color: #444;
+  letter-spacing: 0.2px;
+  background: white;
+  position: relative;
+  overflow: hidden;
+}
+.node-doc::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 8px;
+  background: white;
+  border-top: 1.5px solid #333;
+  clip-path: ellipse(50% 100% at 50% 0%);
+}
+
+.node-connector {
+  width: 32px; height: 32px;
+  border: 1.5px solid #333;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #333;
+  background: white;
+}
+
+.node-page-conn {
+  width: 32px; height: 36px;
+  border: 1.5px solid #333;
+  background: white;
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #333;
+  padding-bottom: 8px;
+}
+
+.note-badge {
+  font-size: 11px; font-weight: 700;
+  color: var(--red); margin-top: 4px;
+  align-self: flex-start;
+}
+
+.doc-badge {
+  border: 1.5px solid #333;
+  padding: 2px 6px;
+  font-size: 8.5px; font-weight: 700;
+  text-transform: uppercase; color: #444;
+  margin-top: 3px; background: white;
+  text-align: center; width: 100%;
+  position: relative;
+}
+.doc-badge::before {
+  content: '';
+  position: absolute;
+  bottom: -5px; left: 0; right: 0;
+  height: 5px;
+  background: white;
+  border: 1.5px solid #333;
+  border-top: none;
+  border-radius: 0 0 40% 40%;
+}
+
+.decision-wrapper {
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; padding: 8px 0;
+}
+.decision-diamond {
+  width: 80px; height: 40px;
+  background: white;
+  transform: rotate(45deg) scaleX(1.6);
+  border: 1.5px solid #333;
+  margin: 16px 0;
+}
+.decision-label {
+  font-size: 9.5px; font-style: italic;
+  text-align: center; color: #222; line-height: 1.3;
+  max-width: 120px; margin: -8px 0 4px;
+}
+.decision-yes { font-size: 9px; font-weight: 700; color: #1a7a6e; }
+.decision-no  { font-size: 9px; font-weight: 700; color: var(--red); }
+
+/* Tabla flow horizontal */
+.hflow { display: flex; align-items: flex-start; gap: 0; width: 100%; }
+.hflow-step { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; padding: 4px 6px; }
+.hflow-arrow {
+  width: 32px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 28px;
+  color: #888; font-size: 16px;
+}
+.hflow-row { display: flex; flex-direction: column; gap: 16px; }
+
+/* Notas */
+.notes-table {
+  margin: 8px 24px 16px;
+  border: 1px solid #ccc;
+  font-size: 11px;
+}
+.notes-header {
+  background: #f0ebe0; padding: 8px 14px;
+  font-weight: 700; font-size: 11px;
+  letter-spacing: 0.3px; border-bottom: 1px solid #ccc;
+  text-align: center;
+}
+.note-row {
+  display: grid; grid-template-columns: 48px 1fr;
+  border-bottom: 1px solid #eee; min-height: 44px;
+}
+.note-row:last-child { border-bottom: none; }
+.note-num {
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  color: var(--red); border-right: 1px solid #eee;
+  padding: 8px;
+}
+.note-text {
+  padding: 8px 12px; color: #333;
+  line-height: 1.5; display: flex; align-items: center;
+}
+
+/* Tabla documentos */
+.docs-table {
+  margin: 8px 24px 16px;
+  border: 1px solid #ccc; font-size: 11px;
+}
+.docs-header {
+  background: #e8d5a0; padding: 8px 14px;
+  font-weight: 700; font-size: 11px;
+  text-align: center; border-bottom: 1px solid #ccc;
+  letter-spacing: 0.3px;
+}
+.docs-cols {
+  display: grid; grid-template-columns: 1fr 200px;
+  border-bottom: 1px solid #ccc;
+}
+.docs-col-header {
+  padding: 6px 14px; font-weight: 700; font-size: 10.5px;
+  background: #f5f0e8;
+}
+.docs-col-header:first-child { border-right: 1px solid #ccc; }
+.docs-body { display: grid; grid-template-columns: 1fr 200px; }
+.docs-left, .docs-right {
+  padding: 12px 14px; line-height: 1.9; color: #333;
+}
+.docs-left { border-right: 1px solid #ccc; }
+
+/* Spinner */
+.spinner-wrap { display:flex; align-items:center; gap:10px; padding:8px 0; }
+.spin { width:18px;height:18px;border:2px solid rgba(200,151,42,0.3);border-top-color:var(--gold);border-radius:50%;animation:spin 0.7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Separador de página */
+.page-sep { width:960px; text-align:center; font-size:11px; color:#aaa; padding:6px 0; }
+
+/* Flecha SI/NO */
+.yn-label {
+  font-size: 9px; font-weight: 700;
+  position: absolute;
+}
+
+@media print {
+  .app { display: block; }
+  .panel { display: none; }
+  .preview { background: white; padding: 0; }
+  .preview-actions { display: none; }
+  .doc-page { box-shadow: none; border-radius: 0; width: 100%; page-break-after: always; }
+}
+</style>
+</head>
+<body>
+<!-- ===== PANTALLA DE LOGIN ===== -->
+<div id="login-screen" style="
+  position:fixed; inset:0; z-index:9999;
+  background:linear-gradient(135deg,#0a1628 0%,#0f1f3d 50%,#1a2d4a 100%);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'DM Sans',sans-serif;
+">
+  <div style="width:340px; text-align:center;">
+
+    <!-- Logo -->
+    <div style="margin-bottom:32px;">
+      <div style="
+        width:64px; height:64px; background:#c8972a; border-radius:14px;
+        display:flex; align-items:center; justify-content:center;
+        margin:0 auto 14px; font-family:'DM Serif Display',serif;
+        font-size:22px; color:#0f1f3d; font-weight:400;
+      ">CI</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:24px;color:white;margin-bottom:4px;">
+        CI&SI Consultores
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-transform:uppercase;">
+        Generador de Mapas de Proceso
+      </div>
+    </div>
+
+    <!-- Formulario -->
+    <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:28px;">
+      <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:20px;">
+        Ingresa tu contraseña para continuar
+      </div>
+
+      <input type="password" id="login-pass" placeholder="Contraseña"
+        onkeydown="if(event.key==='Enter') doLogin()"
+        style="
+          width:100%; padding:12px 16px; margin-bottom:12px;
+          background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+          border-radius:10px; color:white; font-size:14px;
+          font-family:'DM Sans',sans-serif; outline:none;
+          box-sizing:border-box; transition:border-color 0.2s;
+        "
+        onfocus="this.style.borderColor='rgba(200,151,42,0.6)'"
+        onblur="this.style.borderColor='rgba(255,255,255,0.15)'"
+      >
+
+      <div id="login-error" style="
+        color:#e87070; font-size:12px; margin-bottom:10px;
+        min-height:16px; transition:opacity 0.2s;
+      "></div>
+
+      <button onclick="doLogin()" style="
+        width:100%; padding:13px; background:#c8972a; color:#0f1f3d;
+        border:none; border-radius:10px; font-family:'DM Sans',sans-serif;
+        font-size:14px; font-weight:700; cursor:pointer; transition:all 0.2s;
+      "
+        onmouseover="this.style.background='#e6b84a'"
+        onmouseout="this.style.background='#c8972a'"
+      >Ingresar</button>
+    </div>
+
+    <div style="margin-top:20px;font-size:11px;color:rgba(255,255,255,0.2);">
+      Acceso exclusivo · CI&SI Consultores © 2026
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  AUTENTICACIÓN — Opción 1: contraseña + Opción 2: URL secreta
+// ============================================================
+
+// Contraseña de acceso — cámbiala antes de distribuir
+const ACCESS_PASSWORD = 'cisi2026';
+
+// Sesión: si ya inició sesión en esta pestaña, no pide contraseña de nuevo
+function checkSession() {
+  if (sessionStorage.getItem('cisi_auth') === 'ok') {
+    document.getElementById('login-screen').style.display = 'none';
+  }
+}
+
+function doLogin() {
+  const pass = document.getElementById('login-pass').value;
+  const err  = document.getElementById('login-error');
+
+  if (pass === ACCESS_PASSWORD) {
+    sessionStorage.setItem('cisi_auth', 'ok');
+    const screen = document.getElementById('login-screen');
+    screen.style.opacity = '0';
+    screen.style.transition = 'opacity 0.4s';
+    setTimeout(() => screen.style.display = 'none', 400);
+  } else {
+    err.textContent = 'Contraseña incorrecta. Inténtalo de nuevo.';
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-pass').focus();
+    setTimeout(() => err.textContent = '', 3000);
+  }
+}
+
+checkSession();
+</script>
+
+<div class="app">
+
+  <!-- ===== PANEL IZQUIERDO ===== -->
+  <div class="panel">
+    <div>
+      <div class="panel-logo">CI&SI Consultores</div>
+      <div class="panel-sub">Generador de Mapas de Proceso</div>
+    </div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📊</div>
+      <div class="upload-title">Sube el Excel de mapeo</div>
+      <div class="upload-hint">Arrastra tu archivo o haz clic<br>Columnas: Responsable · Actividad · Documento · Notas</div>
+      <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0])">
+    </div>
+
+    <div class="detected-badge" id="detected-badge">
+      ✓ <span id="detected-text">Archivo detectado</span>
+    </div>
+
+    <!-- Datos del documento -->
+    <div>
+      <div class="section-title">Datos del documento</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field">
+          <label>Empresa cliente</label>
+          <input type="text" id="empresa" placeholder="Ej: Campo Alegre Alimentos">
+        </div>
+        <div class="field">
+          <label>Macro proceso</label>
+          <input type="text" id="macro" placeholder="Ej: Recursos Humanos">
+        </div>
+        <div class="field">
+          <label>Proceso</label>
+          <input type="text" id="proceso" placeholder="Ej: Reclutamiento">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="field">
+            <label>Versión</label>
+            <input type="text" id="version" value="1.0.0">
+          </div>
+          <div class="field">
+            <label>Código</label>
+            <input type="text" id="codigo" placeholder="PRO-RH-REC">
+          </div>
+        </div>
+        <div class="field">
+          <label>Fecha</label>
+          <input type="text" id="fecha" id="fecha">
+        </div>
+      </div>
+    </div>
+
+    <!-- Configuración -->
+    <div>
+      <div class="section-title">Conexión con Google Sheet</div>
+      <!-- Sheet URL preconfigurada — oculta al consultor -->
+      <input type="hidden" id="sheet-url" value="https://script.google.com/macros/s/AKfycbzpCjcliljxh08Lg_xu6F4U02G-8fXwrLa_JouGQHs9qNcPoi3EYc1eUgg9IDLAxvjPUg/exec">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button onclick="cargarEmpresas()" style="background:rgba(200,151,42,0.15);border:1px solid rgba(200,151,42,0.4);color:#e8d5a0;border-radius:8px;padding:8px;font-family:DM Sans,sans-serif;font-size:12px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='rgba(200,151,42,0.25)'" onmouseout="this.style.background='rgba(200,151,42,0.15)'">
+          ↻ Cargar empresas del Sheet
+        </button>
+        <div class="field" id="empresa-selector-wrap" style="display:none">
+          <label>Empresa (con memoria guardada)</label>
+          <select id="empresa-select" onchange="seleccionarEmpresa(this.value)">
+            <option value="">— nueva empresa —</option>
+          </select>
+        </div>
+        <div id="memoria-badge" style="display:none;background:rgba(26,122,110,0.2);border:1px solid rgba(26,122,110,0.4);border-radius:6px;padding:8px 12px;font-size:11px;color:#5DCAA5;line-height:1.6"></div>
+      </div>
+    </div>
+
+    <!-- API Key oculta — configurada por administrador -->
+    <input type="hidden" id="apikey" value="AIzaSyBdnAeCb8v3MQLSvl8fd2sPVlpSSNoPfsY">
+
+    <button class="btn-generate" id="gen-btn" onclick="generate()" disabled>
+      ✦ Generar mapa de proceso
+    </button>
+    <div id="status-msg" style="font-size:12px;color:rgba(255,255,255,0.5);text-align:center;min-height:18px"></div>
+  </div>
+
+  <!-- ===== PREVIEW ===== -->
+  <div class="preview" id="preview">
+    <div class="preview-empty" id="empty-state">
+      <div class="preview-empty-icon">⬡</div>
+      <div class="preview-empty-title">Tu documento aparecerá aquí</div>
+      <div style="color:var(--muted);font-size:14px;max-width:280px;margin:0 auto;line-height:1.6">
+        Sube el Excel de mapeo, completa los datos y presiona "Generar"
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ============================================================
+//  ESTADO
+// ============================================================
+let parsedRows   = [];
+let aiSteps      = [];
+let memoriaActual = null; // memoria del cliente seleccionado
+
+// ============================================================
+//  SHEET — CARGAR EMPRESAS
+// ============================================================
+async function cargarEmpresas() {
+  const url = document.getElementById('sheet-url').value.trim();
+  if (!url) return;
+  setStatus('Conectando con el Sheet...');
+  try {
+    // Apps Script requiere seguir redirecciones — usamos XMLHttpRequest
+    const data = await fetchSheet(url + '?action=getEmpresas');
+    if (!data.ok) throw new Error(data.error || 'Error desconocido');
+    const sel = document.getElementById('empresa-select');
+    sel.innerHTML = '<option value="">— nueva empresa —</option>';
+    (data.empresas || []).forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e; opt.textContent = e;
+      sel.appendChild(opt);
+    });
+    document.getElementById('empresa-selector-wrap').style.display = 'block';
+    const n = data.empresas.length;
+    setStatus(n > 0 ? `✓ ${n} empresa(s) cargadas del Sheet` : '✓ Sheet conectado — sin empresas aún');
+  } catch(err) {
+    console.warn('Sheet error:', err);
+    setStatus('⚠ Sheet sin conexión — modo sin memoria');
+    document.getElementById('empresa-selector-wrap').style.display = 'none';
+  }
+}
+
+// Fetch via JSONP — evita el bloqueo CORS de Apps Script (302 redirect)
+function fetchSheet(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cisi_cb_' + Date.now();
+    const script = document.createElement('script');
+    const timer  = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout — el Sheet no respondió en 10 s'));
+    }, 10000);
+
+    window[cbName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    // Agrega el parámetro callback para JSONP
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = url + sep + 'callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('Error de red al conectar con el Sheet')); };
+    document.head.appendChild(script);
+  });
+}
+
+// ============================================================
+//  SHEET — CARGAR MEMORIA DE EMPRESA SELECCIONADA
+// ============================================================
+async function seleccionarEmpresa(empresa) {
+  const url = document.getElementById('sheet-url').value.trim();
+  const badge = document.getElementById('memoria-badge');
+
+  if (!empresa) {
+    memoriaActual = null;
+    badge.style.display = 'none';
+    document.getElementById('empresa').value = '';
+    return;
+  }
+
+  document.getElementById('empresa').value = empresa;
+  setStatus(`Cargando memoria de ${empresa}...`);
+
+  try {
+    const data = await fetchSheet(`${url}?action=getMemoria&empresa=${encodeURIComponent(empresa)}`);
+    if (!data.ok) throw new Error(data.error);
+
+    memoriaActual = data.registros || [];
+    const n = memoriaActual.length;
+    const procesos = memoriaActual.map(r => r.proceso).filter(Boolean);
+    const actores  = [...new Set(memoriaActual.flatMap(r => (r.actores||'').split(',').map(a=>a.trim())).filter(Boolean))];
+
+    badge.style.display = 'block';
+    badge.innerHTML = `<strong>✓ Memoria cargada — ${n} proceso(s) previo(s)</strong><br>
+      ${procesos.length ? 'Procesos: ' + procesos.join(', ') + '<br>' : ''}
+      ${actores.length  ? 'Actores conocidos: ' + actores.slice(0,6).join(', ') : ''}`;
+
+    setStatus(`✓ Memoria de ${empresa} lista — la IA la usará como contexto`);
+  } catch(err) {
+    setStatus('Error al cargar memoria: ' + err.message);
+    memoriaActual = [];
+  }
+}
+
+// ============================================================
+//  SHEET — GUARDAR PROCESO GENERADO
+// ============================================================
+async function guardarEnSheet(data, meta) {
+  const url = document.getElementById('sheet-url').value.trim();
+  if (!url) return;
+
+  const actores = [...new Set(
+    (data.pasos || []).map(p => p.responsable).filter(Boolean)
+  )].join(', ');
+
+  const resumen = (data.pasos || [])
+    .filter(p => p.tipo === 'actividad')
+    .map(p => p.texto)
+    .slice(0,8)
+    .join(' → ');
+
+  const notas_clave = (data.notas || [])
+    .map(n => n.texto)
+    .slice(0,3)
+    .join(' | ');
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        action:        'guardar',
+        empresa:       meta.empresa,
+        proceso:       meta.proceso,
+        macro_proceso: meta.macro,
+        actores,
+        notas_clave,
+        resumen_pasos: resumen,
+        codigo:        meta.codigo,
+      })
+    });
+    setStatus('✓ Proceso guardado en el Sheet de memoria');
+  } catch(err) {
+    console.warn('No se pudo guardar en Sheet:', err);
+  }
+}
+
+// Fecha actual
+const now = new Date();
+document.getElementById('fecha').value =
+  now.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+     .replace(/^\w/, c => c.toUpperCase());
+
+// Auto-cargar empresas al abrir la herramienta
+window.addEventListener('load', () => {
+  setTimeout(cargarEmpresas, 800);
+});
+
+// ============================================================
+//  DRAG & DROP
+// ============================================================
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragging'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragging'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('dragging');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+// ============================================================
+//  LEER EXCEL
+// ============================================================
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb  = XLSX.read(e.target.result, { type: 'array' });
+    const ws  = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+    // Detectar cabecera: buscar fila con "Responsable"
+    let headerRow = -1;
+    let empresa = '', proceso = '';
+    for (let i = 0; i < raw.length; i++) {
+      const row = raw[i].map(c => (c||'').toString().trim().toLowerCase());
+      // Detectar empresa y proceso — ignorar filas con instrucciones o emojis
+      const full = raw[i].filter(Boolean).join(' ').trim();
+      if (i < 12 && full.length > 2 && full.length < 80
+          && !full.includes('💡')
+          && !full.toLowerCase().includes('columna')
+          && !full.toLowerCase().includes('tipo')) {
+        if (!empresa && i < 8) empresa = full;
+        else if (!proceso && i < 10) proceso = full;
+      }
+      if (row.includes('responsable') && row.includes('actividad')) {
+        headerRow = i; break;
+      }
+    }
+
+    if (headerRow === -1) {
+      alert('No encontré las columnas Responsable / Actividad en el Excel. Revisa el formato.');
+      return;
+    }
+
+    const hdr = raw[headerRow].map(c => (c||'').toString().trim().toLowerCase());
+    const iR = hdr.indexOf('responsable');
+    const iA = hdr.findIndex(h => h.includes('actividad'));
+    const iD = hdr.findIndex(h => h.includes('documento'));
+    const iN = hdr.findIndex(h => h.includes('nota') || h.includes('notas'));
+    const iT = hdr.findIndex(h => h.includes('tipo')); // ← nueva columna Tipo
+
+    parsedRows = [];
+    for (let i = headerRow + 1; i < raw.length; i++) {
+      const row = raw[i];
+      const resp = (row[iR]||'').toString().trim();
+      const act  = (row[iA]||'').toString().trim();
+      if (!resp && !act) continue;
+      parsedRows.push({
+        responsable: resp,
+        actividad:   act,
+        documento:   iD >= 0 ? (row[iD]||'').toString().trim() : '',
+        nota:        iN >= 0 ? (row[iN]||'').toString().trim() : '',
+        tipo:        iT >= 0 ? (row[iT]||'').toString().trim().toLowerCase() : '', // directo del Excel
+      });
+    }
+
+    // Pre-rellenar campos si se detectaron
+    if (empresa && !document.getElementById('empresa').value)
+      document.getElementById('empresa').value = empresa;
+    if (proceso && !document.getElementById('proceso').value)
+      document.getElementById('proceso').value = proceso.replace(/mapeo de /i,'');
+
+    const badge = document.getElementById('detected-badge');
+    document.getElementById('detected-text').textContent =
+      `${file.name} — ${parsedRows.length} pasos detectados`;
+    badge.classList.add('visible');
+
+    document.getElementById('gen-btn').disabled = false;
+    setStatus(`✓ ${parsedRows.length} actividades listas`);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// ============================================================
+//  GENERAR CON IA
+// ============================================================
+async function generate() {
+  const empresa = document.getElementById('empresa').value.trim();
+  const macro   = document.getElementById('macro').value.trim();
+  const proceso = document.getElementById('proceso').value.trim();
+  const version = document.getElementById('version').value.trim();
+  const codigo  = document.getElementById('codigo').value.trim();
+  const fecha   = document.getElementById('fecha').value.trim();
+  const apikey  = document.getElementById('apikey').value.trim();
+
+  if (!parsedRows.length) { alert('Primero sube el Excel de mapeo.'); return; }
+  if (!empresa || !proceso) { alert('Completa al menos Empresa y Proceso.'); return; }
+
+  document.getElementById('gen-btn').disabled = true;
+  document.getElementById('empty-state').style.display = 'none';
+
+  const preview = document.getElementById('preview');
+  // Limpiar doc anterior pero mantener spinner
+  const existingDocs = preview.querySelectorAll('.doc-page,.preview-actions,.page-sep');
+  existingDocs.forEach(el => el.remove());
+
+  const spinWrap = document.createElement('div');
+  spinWrap.className = 'spinner-wrap';
+  spinWrap.innerHTML = '<div class="spin"></div><span style="color:#666;font-size:13px">Analizando el proceso con IA...</span>';
+  preview.appendChild(spinWrap);
+
+  setStatus('Conectando con Gemini...');
+
+  // Construir contexto de memoria del cliente
+  let contextoMemoria = '';
+  if (memoriaActual && memoriaActual.length > 0) {
+    const actoresConocidos = [...new Set(
+      memoriaActual.flatMap(r => (r.actores||'').split(',').map(a=>a.trim())).filter(Boolean)
+    )].join(', ');
+    const procesosAnteriores = memoriaActual.map(r => r.proceso).filter(Boolean).join(', ');
+    contextoMemoria = `
+MEMORIA DEL CLIENTE (procesos ya mapeados anteriormente):
+- Empresa: ${empresa}
+- Procesos anteriores: ${procesosAnteriores}
+- Actores conocidos: ${actoresConocidos}
+- Usa exactamente los mismos nombres de actores y la misma terminología de procesos anteriores para mantener consistencia.
+`;
+  }
+
+  const hasTipos = parsedRows.some(r => r.tipo);
+  const rawData = parsedRows.map((r,i) => {
+    const tipoTag = r.tipo ? ` | Tipo: ${r.tipo}` : '';
+    return `${i+1}. Responsable: ${r.responsable} | Actividad: ${r.actividad}${r.documento ? ' | Documento: '+r.documento : ''}${r.nota ? ' | Nota: '+r.nota : ''}${tipoTag}`;
+  }).join('\n');
+
+  const tipoInstruccion = hasTipos
+    ? `\n⚠ INSTRUCCIÓN CRÍTICA: Cuando un paso tenga "Tipo: actividad" o "Tipo: decision" en los datos, USA ESE TIPO EXACTAMENTE — no lo cambies. El consultor ya clasificó manualmente cada paso. Solo usa tu criterio para los pasos sin columna Tipo.\n`
+    : '';
+  const proCode   = (proceso||'XX').replace(/\s+/g,'').substring(0,3).toUpperCase();
+
+  const macroCode = (macro||'XX').replace(/\s+/g,'').substring(0,3).toUpperCase();
+
+  const prompt = `Eres experto en Control Interno y mapeo de procesos bajo el estándar visual de CI&SI Consultores.
+${tipoInstruccion}
+Analiza los pasos de entrevista y devuelve SOLO un JSON válido con esta estructura exacta:
+
+{
+  "objetivos": ["objetivo 1", "objetivo 2", "objetivo 3"],
+  "factores_criticos": ["factor 1", "factor 2", "factor 3"],
+  "indicadores": ["indicador 1", "indicador 2", "indicador 3"],
+  "documentos": [{"nombre":"Nombre del documento","codigo":"FOR-${macroCode}-01"}],
+  "notas": [{"id":"N1","texto":"Texto completo y explicativo de la nota"}],
+  "pasos": [
+    {
+      "tipo": "inicio",
+      "texto": "Inicio",
+      "responsable": "",
+      "documento": null,
+      "nota_ref": null
+    },
+    {
+      "tipo": "actividad",
+      "texto": "Verbo en tercera persona, máx 10 palabras",
+      "responsable": "PUESTO QUE EJECUTA EN MAYÚSCULAS",
+      "documento": "Nombre del documento si aplica, o null",
+      "nota_ref": "N1 si hay nota relacionada, o null"
+    },
+    {
+      "tipo": "decision",
+      "texto": "¿Pregunta corta de bifurcación?",
+      "responsable": "PUESTO EN MAYÚSCULAS",
+      "documento": null,
+      "nota_ref": null,
+      "decision_si": "descripción rama SÍ",
+      "decision_no": "descripción rama NO"
+    },
+    {
+      "tipo": "fin",
+      "texto": "Fin",
+      "responsable": "",
+      "documento": null,
+      "nota_ref": null
+    }
+  ]
+}
+
+═══════════════════════════════════════════════
+REGLAS CRÍTICAS DE CLASIFICACIÓN DE TIPOS:
+═══════════════════════════════════════════════
+
+TIPO "actividad" → Úsalo para: acciones concretas que realiza un puesto (elaborar, revisar, registrar, recibir, entregar, verificar, firmar, acomodar, notificar). La MAYORÍA de pasos son tipo actividad. El texto va en tercera persona: "Elabora el formato de ingreso". El responsable aparece debajo en mayúsculas.
+
+TIPO "decision" → Úsalo SOLO cuando hay una bifurcación real Sí/No que cambia el flujo (ej: "¿Es correcta la recepción?", "¿Está autorizado?", "¿Aprueba la dirección?"). NO uses decision para pasos que son simplemente acciones. Una decisión real tiene dos caminos distintos.
+
+TIPO "inicio" → Solo el primer paso. Texto: "Inicio".
+TIPO "fin" → Solo el último paso. Texto: "Fin".
+TIPO "conector_pagina" → Solo cuando necesitas conectar dos páginas del diagrama (usa número: "1", "2", etc.).
+
+═══════════════════════════════════════════════
+REGLAS DE CONTENIDO:
+═══════════════════════════════════════════════
+- Textos de actividad: concisos, máx 12 palabras, verbo en tercera persona (Elabora, Revisa, Registra, Entrega...)
+- Responsable: en MAYÚSCULAS, solo el puesto (ej: ENCARGADO DE ALMACÉN, LÍDER DE RECURSOS HUMANOS, DIRECTOR GENERAL)
+- Si un paso menciona un documento específico (formato, acta, orden de compra, factura, etc.) → ponlo en "documento"
+- Si hay una nota/aclaración importante para un paso → agrégala a "notas" y referénciala con nota_ref
+- Códigos de documentos: usa formato FOR-${macroCode}-${proCode}-01, FOR-${macroCode}-${proCode}-02, etc.
+- Objetivos: específicos al proceso, no genéricos
+- Notas: completas y explicativas, mín 15 palabras cada una
+- NO limites los pasos a 18 — incluye TODOS los pasos del proceso fielmente
+- Si hay más de 9 pasos, el sistema automáticamente los distribuye en varias páginas
+
+DATOS DEL PROCESO:
+Empresa: ${empresa}
+Macro proceso: ${macro}
+Proceso: ${proceso}
+${contextoMemoria}
+PASOS MAPEADOS (de la entrevista):
+${rawData}
+
+Responde ÚNICAMENTE el JSON, sin markdown, sin bloques de código, sin explicaciones.`;
+
+  let structured = null;
+
+  if (apikey) {
+    try {
+      setStatus('Procesando con Gemini...');
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apikey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.15, maxOutputTokens: 4000 }
+          })
+        }
+      );
+      const data = await resp.json();
+      let text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      text = text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+      structured = JSON.parse(text);
+      setStatus('✓ IA procesó el proceso correctamente');
+    } catch(err) {
+      console.warn('Gemini error:', err);
+      setStatus('API no disponible — usando datos del Excel directamente');
+    }
+  } else {
+    setStatus('Sin API Key — usando datos del Excel directamente');
+  }
+
+  // Fallback: construir estructura desde parsedRows
+  if (!structured) {
+    structured = buildFallback(parsedRows, empresa, macro, proceso);
+  }
+
+  spinWrap.remove();
+  renderDocument(structured, { empresa, macro, proceso, version, codigo, fecha });
+
+  // Guardar automáticamente en el Sheet de memoria
+  await guardarEnSheet(structured, { empresa, macro, proceso, codigo });
+  document.getElementById('gen-btn').disabled = false;
+}
+
+// ============================================================
+//  FALLBACK SIN IA
+// ============================================================
+function buildFallback(rows, empresa, macro, proceso) {
+  const pasos = [{ tipo:'inicio', texto:'Inicio', responsable:'', documento:null, nota_ref:null }];
+  const notas = [];
+  const documentos = [];
+  const docs_seen = new Set();
+
+  rows.forEach((r, i) => {
+    // Si el Excel ya tiene columna Tipo, úsala directamente
+    let tipo = r.tipo || '';
+    if (!tipo) {
+      // Solo inferir si no hay columna Tipo
+      tipo = /si|no|aprueba|aprobad|autoriza|correct|pasa|rechaza|\?/i.test(r.actividad) && r.actividad.length > 40
+        ? 'decision' : 'actividad';
+    }
+    pasos.push({
+      tipo: tipo,
+      texto: r.actividad.length > 80 ? r.actividad.substring(0,77)+'...' : r.actividad,
+      responsable: r.responsable.toUpperCase(),
+      documento: r.documento || null,
+      nota_ref: r.nota ? `N${notas.length+1}` : null,
+      decision_si: tipo === 'decision' ? 'Continúa el proceso' : null,
+      decision_no: tipo === 'decision' ? 'Se notifica y termina' : null,
+    });
+    if (r.nota) {
+      notas.push({ id: `N${notas.length+1}`, texto: r.nota });
+    }
+    if (r.documento && !docs_seen.has(r.documento)) {
+      docs_seen.add(r.documento);
+      documentos.push({ nombre: r.documento, codigo: `FOR-${(macro||'XX').substring(0,2).toUpperCase()}-${String(documentos.length+1).padStart(2,'0')}` });
+    }
+  });
+  pasos.push({ tipo:'fin', texto:'Fin', responsable:'', documento:null, nota_ref:null });
+
+  return {
+    objetivos: [`Ejecutar correctamente el proceso de ${proceso}`, 'Asegurar el cumplimiento de políticas internas', 'Mantener registros oportunos y confiables'],
+    factores_criticos: ['Comunicación efectiva entre áreas', 'Documentación oportuna de cada actividad', 'Cumplimiento de tiempos establecidos'],
+    indicadores: [`Tiempo de ciclo del proceso de ${proceso}`, 'Porcentaje de documentos generados correctamente', 'Número de observaciones en auditoría'],
+    documentos, notas, pasos,
+  };
+}
+
+// ============================================================
+//  RENDER DOCUMENTO
+// ============================================================
+function renderDocument(data, meta) {
+  const preview = document.getElementById('preview');
+
+  // Acciones
+  const actions = document.createElement('div');
+  actions.className = 'preview-actions';
+  actions.innerHTML = `
+    <button class="btn-action" onclick="window.print()">🖨 Imprimir / PDF</button>
+    <button class="btn-action" onclick="exportVisioXml('${escH(meta.proceso)}')">⬇ XML Visio (legacy)</button>
+    <button class="btn-action primary" onclick="exportDrawio('${escH(meta.proceso)}')">⬇ Descargar para draw.io</button>
+  `;
+  preview.appendChild(actions);
+
+  // PÁGINA 1: Portada
+  preview.appendChild(buildCover(meta));
+  preview.appendChild(makeSep('Página 1 — Portada'));
+
+  // PÁGINA 2: Simbología
+  preview.appendChild(buildSymbology(meta));
+  preview.appendChild(makeSep('Página 2 — Simbología'));
+
+  // PÁGINA 3: Ficha técnica
+  preview.appendChild(buildFicha(data, meta));
+  preview.appendChild(makeSep('Página 3 — Ficha técnica'));
+
+  // PÁGINAS DE DIAGRAMA (3 actividades por fila, ~9 por página)
+  const diagPages = buildDiagramPages(data.pasos, meta);
+  diagPages.forEach((pg, i) => {
+    preview.appendChild(pg);
+    preview.appendChild(makeSep(`Página ${4+i} — Diagrama`));
+  });
+
+  // PÁGINA NOTAS
+  if (data.notas && data.notas.length) {
+    preview.appendChild(buildNotas(data.notas, meta));
+    preview.appendChild(makeSep('Notas'));
+  }
+
+  // PÁGINA DOCUMENTOS
+  if (data.documentos && data.documentos.length) {
+    preview.appendChild(buildDocumentos(data.documentos, meta));
+    preview.appendChild(makeSep('Documentos'));
+  }
+
+  // Guardar para export
+  window._lastData = data;
+  window._lastMeta = meta;
+}
+
+function makeSep(label) {
+  const d = document.createElement('div');
+  d.className = 'page-sep';
+  d.textContent = `— ${label} —`;
+  return d;
+}
+
+function escH(s) { return (s||'').replace(/'/g,"\\'"); }
+
+// ============================================================
+//  PORTADA
+// ============================================================
+function buildCover(meta) {
+  const page = document.createElement('div');
+  page.className = 'doc-page';
+  page.innerHTML = `
+    <div style="padding:32px 0 0">
+      ${buildHeaderHtml(meta)}
+    </div>
+    <div class="page-cover">
+      <div class="cover-deco">
+        <div class="hex"></div><div class="hex sm dark"></div><div class="hex dark"></div>
+        <div class="hex sm"></div><div class="hex"></div><div class="hex sm dark"></div>
+        <div class="hex dark"></div><div class="hex sm"></div>
+      </div>
+      <div class="cover-title">Proceso de<br>${escHtml(meta.proceso)}</div>
+    </div>
+  `;
+  return page;
+}
+
+// ============================================================
+//  SIMBOLOGÍA
+// ============================================================
+function buildSymbology(meta) {
+  const page = document.createElement('div');
+  page.className = 'doc-page';
+  page.innerHTML = `
+    <div style="padding:20px 24px 0">${buildHeaderHtml(meta)}</div>
+    <div style="padding:20px 24px 8px;font-size:18px;font-weight:700;font-family:'DM Serif Display',serif">Simbología</div>
+    <div class="symbology-grid">
+      <div>
+        ${symRow(svgOval('Inicio'), 'Inicio de diagrama')}
+        ${symRow(svgRect('ORDEN DE COMPRA','CLIENTE'), 'Actividad a desarrollar')}
+        ${symRow(svgDiamond('¿?'), 'Decisor de actividad')}
+        ${symRow(svgPentagon('1'), 'Conector de página')}
+        ${symRow(svgOval('Fin'), 'Fin de diagrama')}
+      </div>
+      <div>
+        ${symRow(svgDoc('Documento'), 'Documento')}
+        ${symRow(svgCircle(), 'Conector de diagrama')}
+        ${symRow('<span style="font-size:13px;font-weight:700;color:#333">N1</span>', 'Notas adicionales')}
+        ${symRow('<span style="font-size:13px;font-weight:700;color:#c0392b">▲</span>', 'Riesgo')}
+        ${symRow('<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:#1a3a6e;color:white;font-size:10px;font-weight:700;transform:rotate(45deg)">A</span>', 'Control')}
+        ${symRow(svgCylinder(), 'Sistema utilizado')}
+      </div>
+    </div>
+  `;
+  return page;
+}
+
+function symRow(shapeHtml, label) {
+  return `<div class="sym-row">
+    <div class="sym-shape">${shapeHtml}</div>
+    <span class="sym-eq">=</span>
+    <span class="sym-label">${label}</span>
+  </div>`;
+}
+
+function svgOval(txt) {
+  return `<svg width="90" height="32"><ellipse cx="45" cy="16" rx="42" ry="13" fill="white" stroke="#333" stroke-width="1.5"/><text x="45" y="20" text-anchor="middle" font-size="10" font-family="DM Sans,sans-serif">${txt}</text></svg>`;
+}
+function svgRect(top, bot) {
+  return `<svg width="90" height="44"><rect x="2" y="2" width="86" height="40" fill="white" stroke="#333" stroke-width="1.5"/><line x1="2" y1="28" x2="88" y2="28" stroke="#333" stroke-width="1"/><text x="45" y="19" text-anchor="middle" font-size="8" font-family="DM Sans,sans-serif">${top}</text><text x="45" y="38" text-anchor="middle" font-size="8" font-family="DM Sans,sans-serif" font-weight="700">${bot}</text></svg>`;
+}
+function svgDiamond(txt) {
+  return `<svg width="60" height="44"><polygon points="30,2 58,22 30,42 2,22" fill="white" stroke="#333" stroke-width="1.5"/><text x="30" y="26" text-anchor="middle" font-size="10" font-family="DM Sans,sans-serif" font-style="italic">${txt}</text></svg>`;
+}
+function svgPentagon(n) {
+  return `<svg width="36" height="42"><polygon points="2,2 34,2 34,30 18,40 2,30" fill="white" stroke="#333" stroke-width="1.5"/><text x="18" y="20" text-anchor="middle" font-size="11" font-family="DM Sans,sans-serif" font-weight="700">${n}</text></svg>`;
+}
+function svgDoc(txt) {
+  return `<svg width="80" height="40"><rect x="2" y="2" width="76" height="30" fill="white" stroke="#333" stroke-width="1.5"/><path d="M2,32 Q20,44 40,32 Q60,20 78,32" fill="white" stroke="#333" stroke-width="1.5"/><text x="40" y="20" text-anchor="middle" font-size="9" font-family="DM Sans,sans-serif">${txt}</text></svg>`;
+}
+function svgCircle() {
+  return `<svg width="36" height="36"><circle cx="18" cy="18" r="15" fill="white" stroke="#333" stroke-width="1.5"/></svg>`;
+}
+function svgCylinder() {
+  return `<svg width="60" height="44"><ellipse cx="30" cy="10" rx="26" ry="7" fill="white" stroke="#333" stroke-width="1.5"/><rect x="4" y="10" width="52" height="26" fill="white" stroke="#333" stroke-width="0"/><line x1="4" y1="10" x2="4" y2="36" stroke="#333" stroke-width="1.5"/><line x1="56" y1="10" x2="56" y2="36" stroke="#333" stroke-width="1.5"/><ellipse cx="30" cy="36" rx="26" ry="7" fill="white" stroke="#333" stroke-width="1.5"/></svg>`;
+}
+
+// ============================================================
+//  FICHA TÉCNICA
+// ============================================================
+function buildFicha(data, meta) {
+  const page = document.createElement('div');
+  page.className = 'doc-page';
+  const obj  = (data.objetivos||[]).map((o,i)=>`<p>${i+1}. ${o}</p>`).join('');
+  const fce  = (data.factores_criticos||[]).map((f,i)=>`<p>${i+1}. ${f}</p>`).join('');
+  const ind  = (data.indicadores||[]).map((d,i)=>`<p>${i+1}. ${d}</p>`).join('');
+  page.innerHTML = `
+    <div style="padding:20px 24px 0">${buildHeaderHtml(meta)}</div>
+    <div class="ficha-grid">
+      <div class="ficha-col">
+        <div class="ficha-header">OBJETIVOS</div>
+        <div class="ficha-content">${obj}</div>
+      </div>
+      <div class="ficha-col ficha-col-right">
+        <div class="ficha-header">FACTORES CRÍTICOS DE ÉXITO</div>
+        <div class="ficha-content">${fce}</div>
+        <div class="ficha-sub-header">INDICADORES CLAVE DE DESEMPEÑO</div>
+        <div class="ficha-content">${ind}</div>
+      </div>
+    </div>
+  `;
+  return page;
+}
+
+// ============================================================
+//  DIAGRAMA — múltiples páginas
+// ============================================================
+function buildDiagramPages(pasos, meta) {
+  const PER_PAGE = 9;
+  const pages = [];
+  let pageNum = 1;
+
+  for (let i = 0; i < pasos.length; i += PER_PAGE) {
+    const chunk = pasos.slice(i, i + PER_PAGE);
+    const page  = document.createElement('div');
+    page.className = 'doc-page';
+
+    const rows = [];
+    for (let j = 0; j < chunk.length; j += 3) {
+      rows.push(chunk.slice(j, j+3));
+    }
+
+    let rowsHtml = rows.map((row, ri) => {
+      const cells = row.map((paso, ci) => {
+        const isLast = (ri === rows.length-1) && (ci === row.length-1);
+        const nextInRow = ci < row.length - 1;
+        return buildStepCell(paso, nextInRow, !isLast && !nextInRow, pageNum);
+      }).join('');
+      return `<div style="display:grid;grid-template-columns:repeat(${row.length},1fr);margin-bottom:24px;">${cells}</div>`;
+    }).join('');
+
+    page.innerHTML = `
+      <div style="padding:20px 24px 0">${buildHeaderHtml(meta)}</div>
+      <div class="diagram-container">
+        <div>${rowsHtml}</div>
+      </div>
+    `;
+    pages.push(page);
+    pageNum++;
+  }
+  return pages;
+}
+
+function buildStepCell(paso, hasRightArrow, hasDownArrow, pNum) {
+  let innerHtml = '';
+  const tipo = paso.tipo || 'actividad';
+
+  if (tipo === 'inicio' || tipo === 'fin') {
+    innerHtml = `<div style="display:flex;justify-content:center;padding:16px 0">
+      <div style="border:1.5px solid #333;border-radius:50px;padding:8px 28px;font-size:11px;font-weight:700;background:white;letter-spacing:0.3px">${escHtml(paso.texto)}</div>
+    </div>`;
+
+  } else if (tipo === 'decision') {
+    const label = (paso.texto||'').replace(/^¿|[?]$/g,'').trim();
+    innerHtml = `<div style="display:flex;flex-direction:column;align-items:center;padding:6px 0 10px">
+      <div style="font-size:9.5px;font-style:italic;text-align:center;color:#333;margin-bottom:6px;line-height:1.4;max-width:120px">¿${escHtml(label)}?</div>
+      <svg width="90" height="52" viewBox="0 0 90 52">
+        <polygon points="45,2 88,26 45,50 2,26" fill="white" stroke="#333" stroke-width="1.5"/>
+      </svg>
+      <div style="display:flex;gap:24px;font-size:9px;font-weight:700;margin-top:4px">
+        <span style="color:#1a7a6e">SI ↓</span>
+        <span style="color:#c0392b">NO →</span>
+      </div>
+    </div>`;
+
+  } else if (tipo === 'conector_pagina') {
+    innerHtml = `<div style="display:flex;justify-content:center;padding:12px 0">
+      <svg width="36" height="42" viewBox="0 0 36 42">
+        <polygon points="2,2 34,2 34,30 18,40 2,30" fill="white" stroke="#333" stroke-width="1.5"/>
+        <text x="18" y="20" text-anchor="middle" font-size="12" font-weight="700" font-family="DM Sans,sans-serif">${pNum}</text>
+      </svg>
+    </div>`;
+
+  } else {
+    // ── Actividad normal — estándar Orcon ──
+    const notaHtml = paso.nota_ref
+      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;margin-bottom:3px">${escHtml(paso.nota_ref)}</div>` : '';
+
+    // Caja principal: texto arriba + responsable debajo con línea divisoria
+    const cajaHtml = `<div style="border:1.5px solid #333;background:white">
+      <div style="padding:6px 8px;font-size:10px;font-style:italic;color:#222;line-height:1.45;min-height:46px">${escHtml(paso.texto)}</div>
+      <div style="border-top:1.5px solid #333;padding:3px 8px;font-size:8.5px;font-weight:700;text-transform:uppercase;color:#444;letter-spacing:0.3px;background:#fafafa">${escHtml(paso.responsable||'')}</div>
+    </div>`;
+
+    // Documento debajo de la caja — forma de página doblada (como Orcon)
+    const docHtml = paso.documento
+      ? `<div style="position:relative;margin-top:3px;border:1.5px solid #555;border-bottom:none;padding:3px 8px 8px;font-size:8px;font-weight:700;text-transform:uppercase;background:white;text-align:center;letter-spacing:0.2px">
+          ${escHtml(paso.documento)}
+          <svg style="position:absolute;bottom:-9px;left:-1.5px;right:0;display:block" width="calc(100%+3px)" height="10" viewBox="0 0 100 10" preserveAspectRatio="none">
+            <path d="M0,0 Q25,10 50,5 Q75,0 100,10 L100,10 L0,10 Z" fill="white" stroke="#555" stroke-width="1.5"/>
+          </svg>
+          <div style="height:9px"></div>
+        </div>` : '';
+
+    innerHtml = `<div style="padding:2px 0">
+      ${notaHtml}
+      ${cajaHtml}
+      ${docHtml}
+    </div>`;
+  }
+
+  // Flechas de conexión
+  const arrowRight = hasRightArrow
+    ? `<div style="position:absolute;right:-18px;top:40%;transform:translateY(-50%);font-size:18px;color:#999;z-index:2;line-height:1">→</div>` : '';
+  const arrowDown = hasDownArrow
+    ? `<div style="position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:18px;color:#999;line-height:1">↓</div>` : '';
+
+  return `<div style="padding:6px 14px;position:relative;min-height:100px">
+    ${innerHtml}
+    ${arrowRight}
+    ${arrowDown}
+  </div>`;
+}
+
+// ============================================================
+//  NOTAS
+// ============================================================
+function buildNotas(notas, meta) {
+  const page = document.createElement('div');
+  page.className = 'doc-page';
+  const rowsHtml = notas.map(n => `
+    <div class="note-row">
+      <div class="note-num">${n.id}</div>
+      <div class="note-text">${escHtml(n.texto)}</div>
+    </div>`).join('');
+  page.innerHTML = `
+    <div style="padding:20px 24px 0">${buildHeaderHtml(meta)}</div>
+    <div class="notes-table">
+      <div class="notes-header">NOTAS QUE COMPLEMENTAN LA INFORMACIÓN DE LA ACTIVIDAD</div>
+      ${rowsHtml}
+    </div>
+  `;
+  return page;
+}
+
+// ============================================================
+//  DOCUMENTOS
+// ============================================================
+function buildDocumentos(docs, meta) {
+  const page = document.createElement('div');
+  page.className = 'doc-page';
+  const leftItems  = docs.map((d,i) => `${i+1}. ${d.nombre}`).join('<br>');
+  const rightItems = docs.map((d,i) => `${i+1}. ${d.codigo}`).join('<br>');
+  page.innerHTML = `
+    <div style="padding:20px 24px 0">${buildHeaderHtml(meta)}</div>
+    <div class="docs-table">
+      <div class="docs-header">DOCUMENTOS UTILIZADOS EN EL PROCESO</div>
+      <div class="docs-cols">
+        <div class="docs-col-header">DOCUMENTOS UTILIZADOS EN EL PROCESO</div>
+        <div class="docs-col-header">CÓDIGO DEL DOCUMENTO</div>
+      </div>
+      <div class="docs-body">
+        <div class="docs-left">${leftItems}</div>
+        <div class="docs-right">${rightItems}</div>
+      </div>
+    </div>
+  `;
+  return page;
+}
+
+// ============================================================
+//  HEADER INSTITUCIONAL (común a todas las páginas)
+// ============================================================
+function buildHeaderHtml(meta) {
+  return `<div class="doc-header">
+    <div class="doc-header-logo">
+      <div>
+        <div class="logo-text">CI&SI</div>
+        <div class="logo-sub">Control Interno<br>y Procesos</div>
+      </div>
+    </div>
+    <div class="doc-header-info">
+      <div class="doc-header-row">
+        <div class="doc-header-cell"><strong>Empresa:</strong> ${escHtml(meta.empresa)}</div>
+        <div class="doc-header-cell"><strong>Código:</strong> ${escHtml(meta.codigo)}</div>
+      </div>
+      <div class="doc-header-row">
+        <div class="doc-header-cell"><strong>Macro proceso:</strong> ${escHtml(meta.macro)}</div>
+        <div class="doc-header-cell"><strong>Versión:</strong> ${escHtml(meta.version)}</div>
+      </div>
+      <div class="doc-header-row">
+        <div class="doc-header-cell"><strong>Proceso:</strong> ${escHtml(meta.proceso)}</div>
+        <div class="doc-header-cell"><strong>Fecha:</strong> ${escHtml(meta.fecha)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ============================================================
+//  EXPORT DRAW.IO — formato .drawio (XML) fiel al estándar Orcon
+// ============================================================
+function exportDrawio(nombre) {
+  const data = window._lastData;
+  const meta = window._lastMeta;
+  if (!data) return;
+
+  const xml = buildDrawioXml(data.pasos || [], meta);
+  const blob = new Blob([xml], { type: 'application/xml' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `${(nombre||'proceso').replace(/\s+/g,'_')}_CISI.drawio`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildDrawioXml(pasos, meta) {
+  // ── Medidas del estándar Orcon ──
+  const NODE_W  = 170;  // ancho caja actividad
+  const NODE_H  = 80;   // alto caja actividad (texto + responsable)
+  const DEC_W   = 130;  // ancho rombo decisión
+  const DEC_H   = 80;   // alto rombo decisión
+  const OVL_W   = 100;  // ancho óvalo inicio/fin
+  const OVL_H   = 34;
+  const DOC_H   = 38;   // alto forma documento
+  const CON_W   = 40;   // conector de página
+  const CON_H   = 48;
+  const ARROW_W = 48;   // ancho del espacio de flecha entre nodos
+  const ROW_GAP = 56;   // espacio vertical entre filas
+  const COLS    = 3;
+  const START_X = 30;
+  const START_Y = 30;
+
+  let id = 10;
+  const newId = () => (++id).toString();
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  // ── Calcular posición de cada nodo ──
+  // Altura de fila depende de si hay documentos en esa fila
+  const rowHeights = [];
+  for (let r = 0; r * COLS < pasos.length; r++) {
+    const rowPasos = pasos.slice(r * COLS, r * COLS + COLS);
+    const hasDoc = rowPasos.some(p => p.documento);
+    const hasDec = rowPasos.some(p => p.tipo === 'decision');
+    rowHeights.push(NODE_H + (hasDoc ? DOC_H + 4 : 0) + (hasDec ? 10 : 0));
+  }
+
+  // Posición Y acumulada por fila
+  const rowY = [START_Y];
+  for (let r = 0; r < rowHeights.length - 1; r++) {
+    rowY.push(rowY[r] + rowHeights[r] + ROW_GAP);
+  }
+
+  // Posición de cada nodo
+  const pos = {}; // i → {x, y, id, cx, cy}  (cx,cy = centro para flechas)
+  for (let i = 0; i < pasos.length; i++) {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const tipo = pasos[i].tipo || 'actividad';
+    const x = START_X + col * (NODE_W + ARROW_W);
+    const y = rowY[row];
+    const nid = newId();
+    // Centro del nodo para conectar flechas
+    let cx = x + NODE_W / 2;
+    let cy = y + NODE_H / 2;
+    if (tipo === 'inicio' || tipo === 'fin') { cx = x + OVL_W / 2 + (NODE_W - OVL_W) / 2; cy = y + OVL_H / 2; }
+    if (tipo === 'conector_pagina') { cx = x + NODE_W / 2; cy = y + CON_H / 2; }
+    pos[i] = { x, y, id: nid, cx, cy };
+  }
+
+  const cells = [];
+
+  // ── Generar shapes ──
+  for (let i = 0; i < pasos.length; i++) {
+    const p   = pasos[i];
+    const {x, y, id: nid} = pos[i];
+    const tipo = p.tipo || 'actividad';
+    const texto = esc(p.texto || '');
+    const resp  = esc((p.responsable || '').toUpperCase());
+    const doc   = p.documento ? esc(p.documento) : null;
+    const nota  = p.nota_ref  ? esc(p.nota_ref)  : null;
+
+    if (tipo === 'inicio' || tipo === 'fin') {
+      const ox = x + (NODE_W - OVL_W) / 2;
+      cells.push(`<mxCell id="${nid}" value="${texto}" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontStyle=1;fontSize=11;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${ox}" y="${y}" width="${OVL_W}" height="${OVL_H}" as="geometry"/></mxCell>`);
+
+    } else if (tipo === 'decision') {
+      const dx = x + (NODE_W - DEC_W) / 2;
+      cells.push(`<mxCell id="${nid}" value="${texto}" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=9;fontStyle=2;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${dx}" y="${y}" width="${DEC_W}" height="${DEC_H}" as="geometry"/></mxCell>`);
+      // Etiqueta SI (abajo)
+      const siId = newId();
+      cells.push(`<mxCell id="${siId}" value="SI" style="text;html=1;fontSize=9;fontStyle=1;fontColor=#1a7a6e;align=center;" vertex="1" parent="1"><mxGeometry x="${dx + DEC_W/2 - 10}" y="${y + DEC_H + 2}" width="20" height="14" as="geometry"/></mxCell>`);
+      // Etiqueta NO (derecha)
+      const noId = newId();
+      cells.push(`<mxCell id="${noId}" value="NO" style="text;html=1;fontSize=9;fontStyle=1;fontColor=#c0392b;align=left;" vertex="1" parent="1"><mxGeometry x="${dx + DEC_W + 4}" y="${y + DEC_H/2 - 7}" width="24" height="14" as="geometry"/></mxCell>`);
+
+    } else if (tipo === 'conector_pagina') {
+      const cx2 = x + (NODE_W - CON_W) / 2;
+      cells.push(`<mxCell id="${nid}" value="${texto}" style="shape=mxgraph.flowchart.off-page_connector;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontStyle=1;fontSize=12;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${cx2}" y="${y}" width="${CON_W}" height="${CON_H}" as="geometry"/></mxCell>`);
+
+    } else {
+      // ── ACTIVIDAD — dos secciones: texto (cursiva) + responsable (bold) ──
+      // Usamos swimlane de draw.io para la línea divisoria
+      const labelHtml = `&lt;div style='font-style:italic;font-size:9px;line-height:1.4;padding:3px 5px;text-align:left'&gt;${texto}&lt;/div&gt;`;
+      const respHtml  = `&lt;div style='font-size:8px;font-weight:bold;text-transform:uppercase;padding:2px 5px;text-align:left;border-top:1.5px solid #333'&gt;${resp}&lt;/div&gt;`;
+
+      cells.push(`<mxCell id="${nid}" value="${labelHtml}${respHtml}" style="text;html=1;fillColor=#ffffff;strokeColor=#333333;align=left;verticalAlign=top;spacingLeft=0;spacingRight=0;whiteSpace=wrap;overflow=hidden;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" as="geometry"/></mxCell>`);
+
+      // Nota badge (N1, N2...) en rojo arriba-izquierda
+      if (nota) {
+        const notaId = newId();
+        cells.push(`<mxCell id="${notaId}" value="${nota}" style="text;html=1;fontSize=11;fontStyle=1;fontColor=#c0392b;align=left;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y - 18}" width="36" height="16" as="geometry"/></mxCell>`);
+      }
+
+      // Documento — forma de página doblada debajo de la caja
+      if (doc) {
+        const docId = newId();
+        const dw = NODE_W - 20;
+        const dx2 = x + 10;
+        const dy = y + NODE_H + 3;
+        cells.push(`<mxCell id="${docId}" value="${doc}" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#555555;fontSize=8;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${dx2}" y="${dy}" width="${dw}" height="${DOC_H}" as="geometry"/></mxCell>`);
+      }
+    }
+  }
+
+  // ── Generar flechas ──
+  for (let i = 0; i < pasos.length - 1; i++) {
+    const col  = i % COLS;
+    const {id: srcId} = pos[i];
+    const {id: tgtId} = pos[i + 1];
+    const arrId = newId();
+
+    if (col < COLS - 1) {
+      // Flecha horizontal → (mismo renglón)
+      cells.push(`<mxCell id="${arrId}" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#aaaaaa;" edge="1" source="${srcId}" target="${tgtId}" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>`);
+    } else {
+      // Flecha ↓ (último nodo de fila → primero de la siguiente)
+      cells.push(`<mxCell id="${arrId}" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#aaaaaa;" edge="1" source="${srcId}" target="${tgtId}" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>`);
+    }
+  }
+
+  const cellsXml = cells.join('\n  ');
+  // Canvas: calcular ancho/alto total
+  const totalRows = Math.ceil(pasos.length / COLS);
+  const canvasW = START_X * 2 + COLS * NODE_W + (COLS - 1) * ARROW_W + 40;
+  const canvasH = rowY[totalRows - 1] + rowHeights[totalRows - 1] + 60;
+
+  return `<mxGraphModel dx="1422" dy="762" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${canvasW}" pageHeight="${canvasH}" math="0" shadow="0">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+  ${cellsXml}
+  </root>
+</mxGraphModel>`;
+}
+
+function exportVisioXml(nombre) {
+  const data = window._lastData;
+  const meta = window._lastMeta;
+  if (!data) return;
+
+  const pasos = data.pasos || [];
+  let shapes = '';
+  let yPos = 100;
+  const xBase = 100, xStep = 200, boxW = 160, boxH = 60;
+  let col = 0;
+
+  pasos.forEach((p, i) => {
+    const x = xBase + (col % 3) * xStep;
+    const y = yPos + Math.floor(col / 3) * 140;
+    col++;
+
+    const tipo = p.tipo || 'actividad';
+    let geomBlock = '';
+    if (tipo === 'inicio' || tipo === 'fin') {
+      geomBlock = `<Geom IX="0"><Ellipse X="0.5" Y="0.5" A="1" B="0.5" C="0.5" D="0"/></Geom>`;
+    } else if (tipo === 'decision') {
+      geomBlock = `<Geom IX="0">
+        <MoveTo IX="1"><X>0.5</X><Y>0</Y></MoveTo>
+        <LineTo IX="2"><X>1</X><Y>0.5</Y></LineTo>
+        <LineTo IX="3"><X>0.5</X><Y>1</Y></LineTo>
+        <LineTo IX="4"><X>0</X><Y>0.5</Y></LineTo>
+        <LineTo IX="5"><X>0.5</X><Y>0</Y></LineTo>
+      </Geom>`;
+    }
+    const label = (p.texto||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const role  = (p.responsable||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    shapes += `
+    <Shape ID="${i+1}" Type="Shape">
+      <XForm>
+        <PinX>${(x + boxW/2) * 0.01389}</PinX>
+        <PinY>${(1200 - y - boxH/2) * 0.01389}</PinY>
+        <Width>${boxW * 0.01389}</Width>
+        <Height>${boxH * 0.01389}</Height>
+        <LocPinX>0.5</LocPinX><LocPinY>0.5</LocPinY>
+      </XForm>
+      ${geomBlock}
+      <Text><cp IX="0"/>${label}&#10;${role}</Text>
+    </Shape>`;
+  });
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main">
+  <DocumentProperties>
+    <Title>${(meta.proceso||'Proceso').replace(/&/g,'&amp;')}</Title>
+    <Creator>CI&amp;SI Consultores</Creator>
+  </DocumentProperties>
+  <Pages>
+    <Page ID="1" Name="${(meta.proceso||'Proceso').substring(0,30).replace(/&/g,'&amp;')}">
+      <PageProps>
+        <PageWidth>16.535</PageWidth><PageHeight>11.693</PageHeight>
+        <PageScale>0.01389</PageScale><DrawingScale>0.01389</DrawingScale>
+      </PageProps>
+      <Shapes>${shapes}</Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`;
+
+  const blob = new Blob([xml], { type: 'application/xml' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `${(nombre||'proceso').replace(/\s+/g,'_')}_CISI.xml`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
