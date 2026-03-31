@@ -673,7 +673,7 @@ checkSession();
     <div>
       <div class="section-title">Conexión con Google Sheet</div>
       <!-- Sheet URL preconfigurada — oculta al consultor -->
-      <input type="hidden" id="sheet-url" value="https://script.google.com/macros/s/AKfycbxqaFSO773Do7hsDHMUWdafQ_kFoLl5xXMQixvdCaNqY_irVfrWzd1e81qnJU-9stvFYA/exec">
+      <input type="hidden" id="sheet-url" value="https://script.google.com/macros/s/AKfycbzpCjcliljxh08Lg_xu6F4U02G-8fXwrLa_JouGQHs9qNcPoi3EYc1eUgg9IDLAxvjPUg/exec">
       <div style="display:flex;flex-direction:column;gap:10px">
         <button onclick="cargarEmpresas()" style="background:rgba(200,151,42,0.15);border:1px solid rgba(200,151,42,0.4);color:#e8d5a0;border-radius:8px;padding:8px;font-family:DM Sans,sans-serif;font-size:12px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='rgba(200,151,42,0.25)'" onmouseout="this.style.background='rgba(200,151,42,0.15)'">
           ↻ Cargar empresas del Sheet
@@ -747,23 +747,32 @@ async function cargarEmpresas() {
   }
 }
 
-// Fetch que sigue redirecciones de Apps Script correctamente
+// Fetch via JSONP — evita el bloqueo CORS de Apps Script (302 redirect)
 function fetchSheet(url) {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onload = () => {
-      try {
-        resolve(JSON.parse(xhr.responseText));
-      } catch(e) {
-        reject(new Error('Respuesta inválida del Sheet'));
-      }
+    const cbName = 'cisi_cb_' + Date.now();
+    const script = document.createElement('script');
+    const timer  = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout — el Sheet no respondió en 10 s'));
+    }, 10000);
+
+    window[cbName] = (data) => {
+      cleanup();
+      resolve(data);
     };
-    xhr.onerror = () => reject(new Error('Error de red'));
-    xhr.ontimeout = () => reject(new Error('Timeout'));
-    xhr.timeout = 8000;
-    xhr.send();
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    // Agrega el parámetro callback para JSONP
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = url + sep + 'callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('Error de red al conectar con el Sheet')); };
+    document.head.appendChild(script);
   });
 }
 
@@ -993,48 +1002,87 @@ MEMORIA DEL CLIENTE (procesos ya mapeados anteriormente):
     `${i+1}. Responsable: ${r.responsable} | Actividad: ${r.actividad}${r.documento ? ' | Documento: '+r.documento : ''}${r.nota ? ' | Nota: '+r.nota : ''}`
   ).join('\n');
 
-  const prompt = `Eres experto en Control Interno y mapeo de procesos bajo el marco COSO para CI&SI Consultores.
+  const macroCode = (macro||'XX').replace(/\s+/g,'').substring(0,3).toUpperCase();
+  const proCode   = (proceso||'XX').replace(/\s+/g,'').substring(0,3).toUpperCase();
 
-Analiza estos pasos de entrevista y devuelve SOLO un JSON válido con la siguiente estructura:
+  const prompt = `Eres experto en Control Interno y mapeo de procesos bajo el estándar visual de CI&SI Consultores.
+
+Analiza los pasos de entrevista y devuelve SOLO un JSON válido con esta estructura exacta:
 
 {
   "objetivos": ["objetivo 1", "objetivo 2", "objetivo 3"],
   "factores_criticos": ["factor 1", "factor 2", "factor 3"],
   "indicadores": ["indicador 1", "indicador 2", "indicador 3"],
-  "documentos": [{"nombre":"doc","codigo":"FOR-XX-01"}],
-  "notas": [{"id":"N1","texto":"nota completa"}],
+  "documentos": [{"nombre":"Nombre del documento","codigo":"FOR-${macroCode}-01"}],
+  "notas": [{"id":"N1","texto":"Texto completo y explicativo de la nota"}],
   "pasos": [
     {
-      "tipo": "actividad|decision|inicio|fin|conector_pagina",
-      "texto": "Descripción corta (máx 12 palabras)",
-      "responsable": "PUESTO EN MAYUSCULAS",
-      "documento": "nombre del documento o null",
-      "nota_ref": "N1 o null",
-      "decision_si": "texto rama sí o null",
-      "decision_no": "texto rama no o null"
+      "tipo": "inicio",
+      "texto": "Inicio",
+      "responsable": "",
+      "documento": null,
+      "nota_ref": null
+    },
+    {
+      "tipo": "actividad",
+      "texto": "Verbo en tercera persona, máx 10 palabras",
+      "responsable": "PUESTO QUE EJECUTA EN MAYÚSCULAS",
+      "documento": "Nombre del documento si aplica, o null",
+      "nota_ref": "N1 si hay nota relacionada, o null"
+    },
+    {
+      "tipo": "decision",
+      "texto": "¿Pregunta corta de bifurcación?",
+      "responsable": "PUESTO EN MAYÚSCULAS",
+      "documento": null,
+      "nota_ref": null,
+      "decision_si": "descripción rama SÍ",
+      "decision_no": "descripción rama NO"
+    },
+    {
+      "tipo": "fin",
+      "texto": "Fin",
+      "responsable": "",
+      "documento": null,
+      "nota_ref": null
     }
   ]
 }
 
-REGLAS IMPORTANTES:
-- Los pasos deben ser concisos (máx 12 palabras cada uno)
-- Identifica claramente las decisiones (¿?) donde hay bifurcaciones Sí/No
-- El primer paso siempre es tipo "inicio" con texto "Inicio"
-- El último siempre es tipo "fin" con texto "Fin"
-- Detecta los documentos que se generan en cada paso
-- Máximo 18 pasos para que quepa bien en el diagrama
-- Las notas deben ser completas y explicativas
-- Para documentos, inventa códigos tipo FOR-${(macro||'XX').substring(0,2).toUpperCase()}-001
+═══════════════════════════════════════════════
+REGLAS CRÍTICAS DE CLASIFICACIÓN DE TIPOS:
+═══════════════════════════════════════════════
+
+TIPO "actividad" → Úsalo para: acciones concretas que realiza un puesto (elaborar, revisar, registrar, recibir, entregar, verificar, firmar, acomodar, notificar). La MAYORÍA de pasos son tipo actividad. El texto va en tercera persona: "Elabora el formato de ingreso". El responsable aparece debajo en mayúsculas.
+
+TIPO "decision" → Úsalo SOLO cuando hay una bifurcación real Sí/No que cambia el flujo (ej: "¿Es correcta la recepción?", "¿Está autorizado?", "¿Aprueba la dirección?"). NO uses decision para pasos que son simplemente acciones. Una decisión real tiene dos caminos distintos.
+
+TIPO "inicio" → Solo el primer paso. Texto: "Inicio".
+TIPO "fin" → Solo el último paso. Texto: "Fin".
+TIPO "conector_pagina" → Solo cuando necesitas conectar dos páginas del diagrama (usa número: "1", "2", etc.).
+
+═══════════════════════════════════════════════
+REGLAS DE CONTENIDO:
+═══════════════════════════════════════════════
+- Textos de actividad: concisos, máx 12 palabras, verbo en tercera persona (Elabora, Revisa, Registra, Entrega...)
+- Responsable: en MAYÚSCULAS, solo el puesto (ej: ENCARGADO DE ALMACÉN, LÍDER DE RECURSOS HUMANOS, DIRECTOR GENERAL)
+- Si un paso menciona un documento específico (formato, acta, orden de compra, factura, etc.) → ponlo en "documento"
+- Si hay una nota/aclaración importante para un paso → agrégala a "notas" y referénciala con nota_ref
+- Códigos de documentos: usa formato FOR-${macroCode}-${proCode}-01, FOR-${macroCode}-${proCode}-02, etc.
+- Objetivos: específicos al proceso, no genéricos
+- Notas: completas y explicativas, mín 15 palabras cada una
+- NO limites los pasos a 18 — incluye TODOS los pasos del proceso fielmente
+- Si hay más de 9 pasos, el sistema automáticamente los distribuye en varias páginas
 
 DATOS DEL PROCESO:
 Empresa: ${empresa}
 Macro proceso: ${macro}
 Proceso: ${proceso}
 ${contextoMemoria}
-PASOS MAPEADOS:
+PASOS MAPEADOS (de la entrevista):
 ${rawData}
 
-Responde ÚNICAMENTE el JSON, sin markdown, sin explicaciones.`;
+Responde ÚNICAMENTE el JSON, sin markdown, sin bloques de código, sin explicaciones.`;
 
   let structured = null;
 
@@ -1048,7 +1096,7 @@ Responde ÚNICAMENTE el JSON, sin markdown, sin explicaciones.`;
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 2000 }
+            generationConfig: { temperature: 0.15, maxOutputTokens: 4000 }
           })
         }
       );
@@ -1329,21 +1377,23 @@ function buildStepCell(paso, hasRightArrow, hasDownArrow, pNum) {
   const tipo = paso.tipo || 'actividad';
 
   if (tipo === 'inicio' || tipo === 'fin') {
-    innerHtml = `<div style="display:flex;justify-content:center;padding:12px 0">
-      <div style="border:1.5px solid #333;border-radius:50px;padding:7px 22px;font-size:11px;font-weight:600;background:white">${escHtml(paso.texto)}</div>
+    innerHtml = `<div style="display:flex;justify-content:center;padding:16px 0">
+      <div style="border:1.5px solid #333;border-radius:50px;padding:8px 28px;font-size:11px;font-weight:700;background:white;letter-spacing:0.3px">${escHtml(paso.texto)}</div>
     </div>`;
+
   } else if (tipo === 'decision') {
-    innerHtml = `<div style="display:flex;flex-direction:column;align-items:center;padding:4px 0 8px">
-      <div style="font-size:10px;font-style:italic;text-align:center;color:#333;margin-bottom:4px;line-height:1.4;max-width:130px">${escHtml(paso.texto)}</div>
-      <svg width="100" height="56" viewBox="0 0 100 56">
-        <polygon points="50,2 98,28 50,54 2,28" fill="white" stroke="#333" stroke-width="1.5"/>
-        <text x="50" y="32" text-anchor="middle" font-size="9" font-style="italic" font-family="DM Sans,sans-serif">¿?</text>
+    const label = (paso.texto||'').replace(/^¿|[?]$/g,'').trim();
+    innerHtml = `<div style="display:flex;flex-direction:column;align-items:center;padding:6px 0 10px">
+      <div style="font-size:9.5px;font-style:italic;text-align:center;color:#333;margin-bottom:6px;line-height:1.4;max-width:120px">¿${escHtml(label)}?</div>
+      <svg width="90" height="52" viewBox="0 0 90 52">
+        <polygon points="45,2 88,26 45,50 2,26" fill="white" stroke="#333" stroke-width="1.5"/>
       </svg>
-      <div style="display:flex;gap:20px;font-size:9px;font-weight:700">
+      <div style="display:flex;gap:24px;font-size:9px;font-weight:700;margin-top:4px">
         <span style="color:#1a7a6e">SI ↓</span>
         <span style="color:#c0392b">NO →</span>
       </div>
     </div>`;
+
   } else if (tipo === 'conector_pagina') {
     innerHtml = `<div style="display:flex;justify-content:center;padding:12px 0">
       <svg width="36" height="42" viewBox="0 0 36 42">
@@ -1351,31 +1401,42 @@ function buildStepCell(paso, hasRightArrow, hasDownArrow, pNum) {
         <text x="18" y="20" text-anchor="middle" font-size="12" font-weight="700" font-family="DM Sans,sans-serif">${pNum}</text>
       </svg>
     </div>`;
+
   } else {
-    // Actividad normal
+    // ── Actividad normal — estándar Orcon ──
     const notaHtml = paso.nota_ref
-      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;margin-bottom:4px">${escHtml(paso.nota_ref)}</div>` : '';
+      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;margin-bottom:3px">${escHtml(paso.nota_ref)}</div>` : '';
+
+    // Caja principal: texto arriba + responsable debajo con línea divisoria
+    const cajaHtml = `<div style="border:1.5px solid #333;background:white">
+      <div style="padding:6px 8px;font-size:10px;font-style:italic;color:#222;line-height:1.45;min-height:46px">${escHtml(paso.texto)}</div>
+      <div style="border-top:1.5px solid #333;padding:3px 8px;font-size:8.5px;font-weight:700;text-transform:uppercase;color:#444;letter-spacing:0.3px;background:#fafafa">${escHtml(paso.responsable||'')}</div>
+    </div>`;
+
+    // Documento debajo de la caja — forma de página doblada (como Orcon)
     const docHtml = paso.documento
-      ? `<div style="margin-top:6px;border:1.5px solid #555;padding:3px 6px;font-size:8.5px;font-weight:700;text-transform:uppercase;background:white;text-align:center;position:relative;overflow:hidden">
+      ? `<div style="position:relative;margin-top:3px;border:1.5px solid #555;border-bottom:none;padding:3px 8px 8px;font-size:8px;font-weight:700;text-transform:uppercase;background:white;text-align:center;letter-spacing:0.2px">
           ${escHtml(paso.documento)}
-          <div style="position:absolute;bottom:-4px;left:0;right:0;height:5px;background:white;border-top:1.5px solid #555;border-radius:0 0 40% 40%"></div>
+          <svg style="position:absolute;bottom:-9px;left:-1.5px;right:0;display:block" width="calc(100%+3px)" height="10" viewBox="0 0 100 10" preserveAspectRatio="none">
+            <path d="M0,0 Q25,10 50,5 Q75,0 100,10 L100,10 L0,10 Z" fill="white" stroke="#555" stroke-width="1.5"/>
+          </svg>
+          <div style="height:9px"></div>
         </div>` : '';
-    innerHtml = `<div style="padding:4px 0">
+
+    innerHtml = `<div style="padding:2px 0">
       ${notaHtml}
-      <div style="border:1.5px solid #333;background:white">
-        <div style="padding:6px 8px;font-size:10.5px;font-style:italic;color:#222;line-height:1.4;min-height:44px">${escHtml(paso.texto)}</div>
-        <div style="border-top:1.5px solid #333;padding:3px 8px;font-size:9px;font-weight:700;text-transform:uppercase;color:#444;letter-spacing:0.2px">${escHtml(paso.responsable||'')}</div>
-      </div>
+      ${cajaHtml}
       ${docHtml}
     </div>`;
   }
 
+  // Flechas de conexión
   const arrowRight = hasRightArrow
-    ? `<div style="position:absolute;right:-18px;top:50%;transform:translateY(-50%);font-size:18px;color:#aaa;z-index:2">→</div>` : '';
-  const arrowDown  = hasDownArrow
-    ? `<div style="position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:18px;color:#aaa">↓</div>` : '';
+    ? `<div style="position:absolute;right:-18px;top:40%;transform:translateY(-50%);font-size:18px;color:#999;z-index:2;line-height:1">→</div>` : '';
+  const arrowDown = hasDownArrow
+    ? `<div style="position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:18px;color:#999;line-height:1">↓</div>` : '';
 
-  return `<div style="padding:6px 14px;position:relative">
+  return `<div style="padding:6px 14px;position:relative;min-height:100px">
     ${innerHtml}
     ${arrowRight}
     ${arrowDown}
